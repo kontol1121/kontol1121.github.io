@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aplikasi Foto & Lokasi (Local Storage)</title>
+    <title>Aplikasi Foto & Lokasi Otomatis</title>
     <style>
         body {
             font-family: sans-serif;
@@ -28,17 +28,6 @@
             display: block;
             margin: 10px auto;
         }
-        #controls button {
-            padding: 10px 20px;
-            margin: 8px;
-            font-size: 16px;
-            cursor: pointer;
-            border: none;
-            border-radius: 4px;
-        }
-        #start-camera-btn { background-color: #2ecc71; color: white; }
-        #capture-btn { background-color: #e74c3c; color: white; }
-        
         #results {
             margin-top: 30px;
             padding: 15px;
@@ -49,32 +38,28 @@
             height: auto;
             border: 1px solid #ddd;
             margin-top: 15px;
-            display: none; /* Sembunyikan secara default */
+            display: none;
         }
-        #canvas-output { display: none; } /* Selalu sembunyikan canvas */
+        #canvas-output { display: none; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>📸 Pengambil Foto & Lokasi</h1>
+        <h1>📸 Pengambilan Data Otomatis</h1>
+        <p>Akses kamera dan lokasi akan dimulai secara otomatis.</p>
         
-        <video id="video-stream" autoplay playsinline></video>
+        <video id="video-stream" autoplay playsinline style="display: none;"></video>
         <canvas id="canvas-output" width="640" height="480"></canvas>
-
-        <div id="controls">
-            <button id="start-camera-btn" onclick="startCamera()">Mulai Kamera</button>
-            <button id="capture-btn" disabled onclick="capturePhotoAndLocation()">Ambil Foto & Simpan</button>
-        </div>
 
         <hr>
 
         <div id="results">
-            <h2>Data Tersimpan (Local Storage)</h2>
-            <p id="storage-status">Menunggu pengambilan...</p>
-            <p><strong>Lokasi Tersimpan:</strong> <span id="saved-location-data"></span></p>
-            <button onclick="loadFromLocalStorage()">Muat Foto Tersimpan</button>
+            <h2>Status Proses</h2>
+            <p id="process-status">Memulai akses...</p>
+            <p><strong>Lokasi Tersimpan:</strong> <span id="saved-location-data">Menunggu...</span></p>
             
+            <h3>Foto Tersimpan</h3>
             <img id="photo-preview" />
         </div>
         
@@ -84,56 +69,52 @@
         const video = document.getElementById('video-stream');
         const canvas = document.getElementById('canvas-output');
         const context = canvas.getContext('2d');
-        const captureBtn = document.getElementById('capture-btn');
-        const startCameraBtn = document.getElementById('start-camera-btn');
         const photoPreview = document.getElementById('photo-preview');
         const savedLocationData = document.getElementById('saved-location-data');
-        const storageStatus = document.getElementById('storage-status');
+        const processStatus = document.getElementById('process-status');
         let stream = null;
 
-        // --- 1. Kamera (MediaDevices API) ---
-        async function startCamera() {
-            if (stream) {
-                // Matikan kamera jika sudah berjalan
-                stream.getTracks().forEach(track => track.stop());
-                video.srcObject = null;
-                captureBtn.disabled = true;
-                startCameraBtn.textContent = 'Mulai Kamera';
-                stream = null;
-                return;
-            }
-
+        // --- 1. Fungsi Utama: Ambil Foto, Lokasi, dan Simpan ---
+        async function initiateCaptureAndSave() {
+            processStatus.textContent = 'Meminta izin kamera...';
+            
             try {
-                // Minta akses ke kamera
+                // A. Mulai Kamera (Otomatis)
                 stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
                 video.srcObject = stream;
-                video.play();
-                captureBtn.disabled = false;
-                startCameraBtn.textContent = 'Matikan Kamera';
+                video.style.display = 'block'; // Tampilkan sebentar
+                
+                processStatus.textContent = '✅ Izin kamera didapat. Memulai pengambilan foto dan lokasi...';
+                
+                // Tunggu sebentar agar video stream stabil (opsional, tapi disarankan)
+                await new Promise(resolve => setTimeout(resolve, 500)); 
+
+                // B. Ambil Foto
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const photoDataURL = canvas.toDataURL('image/png');
+
+                // C. Matikan Kamera
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                video.style.display = 'none'; // Sembunyikan lagi
+
+                // D. Ambil Lokasi & Simpan (Local Storage)
+                getGeolocAndSave(photoDataURL);
+
             } catch (err) {
-                alert('Gagal mengakses kamera. Pastikan Anda mengizinkan akses dan menggunakan HTTPS/localhost.');
+                processStatus.textContent = '❌ Gagal mengakses kamera. Error: ' + err.message;
                 console.error("Error Kamera: " + err);
-                captureBtn.disabled = true;
+                getGeolocAndSave(null); // Coba ambil lokasi saja jika kamera gagal
             }
         }
+        
+        // --- 2. Fungsi Ambil Lokasi & Simpan ---
+        function getGeolocAndSave(photoDataURL) {
+            processStatus.textContent += ' Meminta izin lokasi...';
 
-        // --- 2. Mengambil Foto & Lokasi dan Menyimpan ke Local Storage ---
-        function capturePhotoAndLocation() {
-            if (!stream) {
-                alert("Kamera belum dimulai.");
-                return;
-            }
-
-            // A. Ambil Foto
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const photoDataURL = canvas.toDataURL('image/png');
-
-            // B. Ambil Lokasi (Async Operation)
             if (navigator.geolocation) {
-                storageStatus.textContent = 'Mencari lokasi dan menyimpan foto...';
-                
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         const lat = position.coords.latitude;
@@ -141,47 +122,50 @@
                         const timestamp = new Date().toLocaleString();
                         const locationString = `Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)} (${timestamp})`;
 
-                        // C. Simpan ke Local Storage
-                        try {
-                            // Local Storage hanya menerima string
-                            localStorage.setItem('capturedPhoto', photoDataURL);
-                            localStorage.setItem('capturedLocation', locationString);
-                            
-                            storageStatus.textContent = '✅ Foto dan Lokasi berhasil disimpan ke Local Storage!';
-                            savedLocationData.textContent = locationString;
-                            
-                            // Tampilkan foto segera setelah disimpan
-                            photoPreview.src = photoDataURL;
-                            photoPreview.style.display = 'block';
-
-                        } catch (e) {
-                            storageStatus.textContent = `❌ Gagal menyimpan: ${e.message}`;
-                            alert("Peringatan: Local Storage penuh! Foto mungkin terlalu besar. Hanya data kecil yang bisa disimpan.");
-                        }
+                        // Simpan ke Local Storage
+                        saveToLocalStorage(photoDataURL, locationString);
+                        
                     },
                     (error) => {
-                        // Jika lokasi gagal didapat, simpan foto saja
-                        localStorage.setItem('capturedPhoto', photoDataURL);
-                        localStorage.setItem('capturedLocation', 'Lokasi tidak tersedia atau ditolak.');
-                        storageStatus.textContent = `⚠️ Lokasi gagal didapat, Foto disimpan. ${error.message}`;
-                        savedLocationData.textContent = 'Lokasi tidak tersedia atau ditolak.';
-
-                        photoPreview.src = photoDataURL;
-                        photoPreview.style.display = 'block';
+                        // Jika lokasi gagal didapat
+                        const locationString = 'Lokasi tidak tersedia atau ditolak.';
+                        saveToLocalStorage(photoDataURL, locationString);
                     }
                 );
             } else {
-                storageStatus.textContent = 'Geolocation tidak didukung.';
-                // Jika Geolocation tidak didukung, simpan foto saja
-                localStorage.setItem('capturedPhoto', photoDataURL);
-                localStorage.setItem('capturedLocation', 'Geolocation tidak didukung.');
-                
-                photoPreview.src = photoDataURL;
-                photoPreview.style.display = 'block';
+                // Jika Geolocation tidak didukung
+                const locationString = 'Geolocation tidak didukung.';
+                saveToLocalStorage(photoDataURL, locationString);
             }
         }
+        
+        // --- 3. Fungsi Penyimpanan ---
+        function saveToLocalStorage(photoDataURL, locationString) {
+            
+            // Simpan Lokasi
+            localStorage.setItem('capturedLocation', locationString);
+            savedLocationData.textContent = locationString;
+            
+            // Simpan Foto (jika berhasil diambil)
+            if (photoDataURL) {
+                try {
+                    localStorage.setItem('capturedPhoto', photoDataURL);
+                    photoPreview.src = photoDataURL;
+                    photoPreview.style.display = 'block';
+                    processStatus.textContent = '✅ Sukses! Foto dan Lokasi disimpan ke Local Storage.';
+                } catch (e) {
+                    processStatus.textContent = `❌ Penyimpanan Foto gagal (Local Storage Penuh). Lokasi tersimpan. Error: ${e.message}`;
+                    photoPreview.style.display = 'none';
+                }
+            } else {
+                 processStatus.textContent = '❌ Foto gagal diambil. Lokasi (jika tersedia) disimpan.';
+            }
+            
+            // Perbarui status akhir
+            loadFromLocalStorage();
+        }
 
-        // --- 3. Memuat Data dari Local Storage ---
+        // --- 4. Fungsi Muat Data Saat Halaman Dimuat ---
         function loadFromLocalStorage() {
             const savedPhoto = localStorage.getItem('capturedPhoto');
             const savedLocation = localStorage.getItem('capturedLocation');
@@ -189,20 +173,18 @@
             if (savedPhoto) {
                 photoPreview.src = savedPhoto;
                 photoPreview.style.display = 'block';
-            } else {
-                photoPreview.style.display = 'none';
-                alert("Tidak ada foto yang tersimpan di Local Storage.");
             }
-
             if (savedLocation) {
                 savedLocationData.textContent = savedLocation;
-            } else {
-                savedLocationData.textContent = 'Tidak ada data lokasi yang tersimpan.';
             }
         }
 
-        // Muat data saat halaman pertama kali dimuat
-        document.addEventListener('DOMContentLoaded', loadFromLocalStorage);
+
+        // --- EKSEKUSI OTOMATIS SAAT KODE DIMUAT ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFromLocalStorage(); // Tampilkan data lama
+            initiateCaptureAndSave(); // Mulai proses pengambilan data baru
+        });
 
     </script>
 
